@@ -1,104 +1,349 @@
-# Getting Started with Create React App
+# WaW — Eye Blink Detection System
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A cross-platform prototype for real-time eye-blink tracking with an offline-first desktop client, a secure NestJS backend, and a read-only React dashboard. Focused on privacy-aware design and cloud-ready architecture.
 
-## Available Scripts
+---
 
-In the project directory, you can run:
+## Table of contents
 
-### `npm start`
+- [Architecture](#architecture)
+- [Features](#features)
+- [Tech stack](#tech-stack)
+- [Database schema](#database-schema)
+- [Authentication & API security](#authentication--api-security)
+- [Privacy & consent](#privacy--consent)
+- [Offline-first sync behaviour](#offline-first-sync-behaviour)
+- [Dashboard metrics](#dashboard-metrics)
+- [Quick start](#quick-start)
+- [Firestore rules (example)](#firestore-rules-example)
+- [Roadmap](#roadmap)
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+---
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+## Architecture
 
-### `npm test`
+Desktop App (PyQt6 + OpenCV/dlib)
+→ POST blink events to /blinks/:userId  
+NestJS Backend (protected endpoints)
+→ SQLite local dev / Firestore in production  
+React Web Dashboard (read-only)
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+---
 
-### `npm run build`
+## Features
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+- Real-time eye-blink detection using webcam + OpenCV/dlib
+- Offline-first: local SQLite buffer with automatic sync
+- Lightweight per-user login (email-based identifier) for user-level isolation
+- API protected with an API key guard (dev) — replace with JWT/Firebase Auth in production
+- Read-only web dashboard for per-user aggregated metrics
+- Privacy-first: no video/images are uploaded; only anonymized blink events & timestamps
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+---
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Tech stack
 
-### `npm run eject`
+- Desktop: PyQt6, OpenCV, dlib, SQLite  
+- Backend: NestJS (TypeScript), SQLite (dev), Firestore (prod)  
+- Web: React  
+- Cloud: Firebase Firestore, Google Cloud Run (conceptual)
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+---
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Database schema
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+UserProfile (collection / table)
+- id: string (auto)
+- name: string
+- email: string (used as userId)
+- consent: boolean
+- createdAt: timestamp
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+BlinkEvent (collection / table)
+- id: string (auto)
+- userId: string (FK → UserProfile)
+- timestamp: timestamp
+- blinkCount: number
+- duration: number (ms)
+- synced: boolean
+- source: string (e.g., "desktop")
 
-## Learn More
+Relationship: One-to-many (UserProfile → BlinkEvent)
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+---
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## Authentication & API security
 
-## GDPR & Privacy Considerations
+Development guard: x-api-key header
+- Example header:
+  x-api-key: demo-secret
 
-This prototype was designed with GDPR principles in mind, even though it is not production-grade yet.[web:13][web:19]
+Protected endpoints (dev)
+- POST /blinks/:userId — ingest blink events
+- GET  /dashboard/:userId — fetch aggregated dashboard data
 
-- **Lawful basis & consent**  
-  - The desktop app is intended to present a clear consent screen before any eye-tracking starts, explaining what is collected (blink counts, timestamps, coarse device performance stats) and why.  
-  - A consent flag is stored per user profile; if consent is not given, no data is sent to the backend.
+Note: Store secrets in a secret manager and migrate to JWT or Firebase Auth for production.
 
-- **Data minimization & purpose limitation**  
-  - Only the minimum data required for the “wellness at work” use case is processed: blink count, timestamps, CPU %, memory %, and a pseudonymous user ID.[web:7][web:10]  
-  - No raw video frames, facial images, or full eye-tracking traces are stored by the backend; the eye tracker runs locally and emits only aggregate blink counts.
+---
 
-- **Rights of the data subject**  
-  - The backend is structured so that it can support:  
-    - Right of access: an endpoint to export all blink events for a user.  
-    - Right to erasure: an endpoint to delete all data associated with a user ID.  
-    - Right to rectification/objection: configuration to stop tracking and delete existing data.
+## Privacy & consent
 
-- **Storage & retention**  
-  - Local SQLite is intended as a short-lived buffer for offline use; data can be purged automatically after a defined retention period (e.g. 30 days) in a production system.  
-  - Cloud storage would be on a managed, encrypted database (e.g. Postgres on RDS or Firestore) with strict access controls and audit logging.
+- Explicit consent is requested at login and stored in UserProfile
+- No images or raw video are stored or transmitted
+- Only blink counts, timestamps, and coarse session metrics are sent
+- Users can revoke consent or request data deletion
+- No biometric templates or facial embeddings are generated or stored
 
-- **Security controls (current & planned)**  
-  ## API Security and Protected Endpoints
+---
 
-  The NestJS backend uses a simple API key–based mechanism to protect the core endpoints.[web:22][web:23][web:24]
+## Offline-first sync behaviour
 
-  - A custom **ApiKeyGuard** checks every request for the header: 
-  - API layer would enforce per-user access control so that users and districts only see their own data.  
-  - In a full implementation, JWT-based auth, rate limiting, input validation, and secure secrets management (e.g. environment variables in the cloud environment) would be added.
+1. Desktop app writes blink events to local SQLite with synced = 0
+2. App attempts to POST events to backend
+3. On success, event is marked synced = 1
+4. Failed syncs are retried on next connection
+5. Dashboard shows only successfully synced data
 
-## User Authentication
+---
 
-The desktop application implements a simple authentication flow:
+## Dashboard metrics
 
-- On startup, a PyQt6 **login dialog** prompts the user for an email address (and optional name).
-- The entered email is used as the `userId` for the entire session, and is:
-  - Stored alongside each blink event in the local SQLite database.
-  - Sent in the URL path for all backend calls: `POST /blinks/:userId` and `GET /dashboard/:userId`.
-- This keeps the UX lightweight while still modeling per‑user data separation and enabling user‑specific dashboards.
+- Total blinks (hourly / daily)
+- Blink rate trends
+- Session duration summaries
+- Aggregated per-user insights (read-only)
 
-In a production system this dialog would be replaced or backed by a real identity provider (e.g. SSO/Firebase Auth) so the email is verified and associated with an account in the district’s IdP.[web:22][web:32]
+---
 
-### Offline-First Sync Behaviour
+## Quick start
 
-- Each blink event is written immediately to a local **SQLite** table with a `synced` flag defaulting to `0`.
-- The app then attempts to send the event to the backend API; on success it marks the corresponding row as `synced = 1`.
-- If the network call fails, the row remains unsynced and can be retried on the next successful connection, providing graceful handling of offline periods.[web:21][web:38]
+1. Run backend (NestJS)
+```bash
+cd backend
+npm install
+npm run start:dev
+# backend: http://localhost:3000
+# env: API_KEY=demo-secret
+```
 
-### If given more time
+2. Run desktop app (PyQt6)
+```bash
+cd desktop
+pip install -r requirements.txt
+python main.py
+# env: BACKEND_URL=http://localhost:3000
+# env: API_KEY=demo-secret
+```
 
-- Integrate a managed identity provider (e.g. Firebase Auth or district SSO) to avoid handling passwords directly.[web:38]  
-- Implement real storage and aggregation (RDS/Firestore) plus data export/erasure endpoints.  
-- Conduct a DPIA focused on eye-tracking data and document it for district customers.  
-- Add automated privacy and security tests in CI to guard against regressions.
+3. Run web dashboard (React)
+```bash
+cd dashboard
+npm install
+npm start
+# dashboard: http://localhost:3001
+```
 
+---
+
+## Firestore rules (example)
+```js
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /blinks/{blinkId} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+  }
+}
+```
+
+---
+
+## Roadmap / Next steps
+
+- Integrate Firebase Auth (email/SSO)
+- Replace API-key auth with JWT / role-based access
+- Add rate limiting & request validation
+- Add CI for linting, tests, and security checks
+- Formal DPIA for eye-tracking data
+
+---
+
+If you want, I can:
+- Clean up the README in-place (apply this content to the file), or
+- Generate a shorter changelog-style README for README.md root.
+```// filepath: /Users/deepakm/waw-eye-tracker/web/README.md
+# WaW — Eye Blink Detection System
+
+A cross-platform prototype for real-time eye-blink tracking with an offline-first desktop client, a secure NestJS backend, and a read-only React dashboard. Focused on privacy-aware design and cloud-ready architecture.
+
+---
+
+## Table of contents
+
+- [Architecture](#architecture)
+- [Features](#features)
+- [Tech stack](#tech-stack)
+- [Database schema](#database-schema)
+- [Authentication & API security](#authentication--api-security)
+- [Privacy & consent](#privacy--consent)
+- [Offline-first sync behaviour](#offline-first-sync-behaviour)
+- [Dashboard metrics](#dashboard-metrics)
+- [Quick start](#quick-start)
+- [Firestore rules (example)](#firestore-rules-example)
+- [Roadmap](#roadmap)
+
+---
+
+## Architecture
+
+Desktop App (PyQt6 + OpenCV/dlib)
+→ POST blink events to: POST /blinks/:userId  
+NestJS Backend (protected endpoints)
+→ SQLite local dev / Firestore in production  
+React Web Dashboard (read-only)
+
+---
+
+## Features
+
+- Real-time eye-blink detection using webcam + OpenCV/dlib
+- Offline-first: local SQLite buffer with automatic sync
+- Lightweight per-user login (email-based) for isolation
+- API protected with an API key guard (dev) — replace with JWT/Firebase Auth in production
+- Read-only web dashboard for per-user aggregated metrics
+- Privacy-first: no video/images are uploaded; only anonymized blink events & timestamps
+
+---
+
+## Tech stack
+
+- Desktop: PyQt6, OpenCV, dlib, SQLite  
+- Backend: NestJS (TypeScript), SQLite (dev), Firestore (prod)  
+- Web: React  
+- Cloud: Firebase Firestore, Google Cloud Run (conceptual)
+
+---
+
+## Database schema
+
+UserProfile (collection / table)
+- id: string (auto)
+- name: string
+- email: string (used as userId)
+- consent: boolean
+- createdAt: timestamp
+
+BlinkEvent (collection / table)
+- id: string (auto)
+- userId: string (FK → UserProfile)
+- timestamp: timestamp
+- blinkCount: number
+- duration: number (ms)
+- synced: boolean
+- source: string (e.g., "desktop")
+
+Relationship: One-to-many (UserProfile → BlinkEvent)
+
+---
+
+## Authentication & API security
+
+Development guard: x-api-key header
+- Example header:
+  x-api-key: demo-secret
+
+Protected endpoints (dev)
+- POST /blinks/:userId — ingest blink events
+- GET  /dashboard/:userId — fetch aggregated dashboard data
+
+Note: Store secrets in a secret manager and migrate to JWT or Firebase Auth for production.
+
+---
+
+## Privacy & consent
+
+- Explicit consent is requested at login and stored in UserProfile
+- No images or raw video are stored or transmitted
+- Only blink counts, timestamps, and coarse session metrics are sent
+- Users can revoke consent or request data deletion
+
+---
+
+## Offline-first sync behaviour
+
+1. Desktop app writes blink events to local SQLite with synced = 0
+2. App attempts to POST events to backend
+3. On success, event is marked synced = 1
+4. Failed syncs are retried on next connection
+5. Dashboard shows only successfully synced data
+
+---
+
+## Dashboard metrics
+
+- Total blinks (hourly / daily)
+- Blink rate trends
+- Session duration summaries
+- Aggregated per-user insights (read-only)
+
+---
+
+## Quick start
+
+1. Run backend (NestJS)
+```bash
+cd backend
+npm install
+npm run start:dev
+# backend: http://localhost:3000
+# env: API_KEY=demo-secret
+```
+
+2. Run desktop app (PyQt6)
+```bash
+cd desktop
+pip install -r requirements.txt
+python main.py
+# env: BACKEND_URL=http://localhost:3000
+# env: API_KEY=demo-secret
+```
+
+3. Run web dashboard (React)
+```bash
+cd dashboard
+npm install
+npm start
+# dashboard: http://localhost:3001
+```
+
+---
+
+## Firestore rules (example)
+```js
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /blinks/{blinkId} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+  }
+}
+```
+
+---
+
+## Roadmap / Next steps
+
+- Integrate Firebase Auth (email/SSO)
+- Replace API-key auth with JWT / role-based access
+- Add rate limiting & request validation
+- Add CI for linting, tests, and security checks
+- Formal DPIA for eye-tracking data
 
