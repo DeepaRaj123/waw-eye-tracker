@@ -1,0 +1,35 @@
+name: Build Windows EXE
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'desktop/**'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        cd desktop
+        pip install pyinstaller psutil PyQt6 opencv-python
+        pip install -r requirements.txt
+        
+    - name: Build EXE
+      run: |
+        cd desktop
+        pyinstaller --windowed --onefile --name "WaW-EyeTracker" main.py
+      shell: pwsh
+      
+    - name: Upload Windows package
+      uses: actions/upload-artifact@v4
+      with:
+        name: WaW-EyeTracker-Windows
+        path: desktop/dist/WaW-EyeTracker.exe
