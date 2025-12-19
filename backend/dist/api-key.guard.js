@@ -6,19 +6,21 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AppModule = void 0;
+exports.ApiKeyGuard = void 0;
 const common_1 = require("@nestjs/common");
-const app_controller_1 = require("./app.controller");
-const app_service_1 = require("./app.service");
-const api_key_guard_1 = require("./api-key.guard");
-let AppModule = class AppModule {
+let ApiKeyGuard = class ApiKeyGuard {
+    validKey = process.env.API_KEY || 'demo-secret';
+    canActivate(context) {
+        const request = context.switchToHttp().getRequest();
+        const apiKey = request.headers['x-api-key'];
+        if (!apiKey || apiKey !== this.validKey) {
+            throw new common_1.UnauthorizedException('Invalid or missing API key');
+        }
+        return true;
+    }
 };
-exports.AppModule = AppModule;
-exports.AppModule = AppModule = __decorate([
-    (0, common_1.Module)({
-        imports: [],
-        controllers: [app_controller_1.AppController],
-        providers: [app_service_1.AppService, api_key_guard_1.ApiKeyGuard],
-    })
-], AppModule);
-//# sourceMappingURL=app.module.js.map
+exports.ApiKeyGuard = ApiKeyGuard;
+exports.ApiKeyGuard = ApiKeyGuard = __decorate([
+    (0, common_1.Injectable)()
+], ApiKeyGuard);
+//# sourceMappingURL=api-key.guard.js.map

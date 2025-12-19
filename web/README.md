@@ -68,9 +68,31 @@ This prototype was designed with GDPR principles in mind, even though it is not 
   - Cloud storage would be on a managed, encrypted database (e.g. Postgres on RDS or Firestore) with strict access controls and audit logging.
 
 - **Security controls (current & planned)**  
-  - All backend access is designed to be over HTTPS with authentication protecting user-specific endpoints.[web:13]  
+  ## API Security and Protected Endpoints
+
+  The NestJS backend uses a simple API key–based mechanism to protect the core endpoints.[web:22][web:23][web:24]
+
+  - A custom **ApiKeyGuard** checks every request for the header: 
   - API layer would enforce per-user access control so that users and districts only see their own data.  
   - In a full implementation, JWT-based auth, rate limiting, input validation, and secure secrets management (e.g. environment variables in the cloud environment) would be added.
+
+## User Authentication
+
+The desktop application implements a simple authentication flow:
+
+- On startup, a PyQt6 **login dialog** prompts the user for an email address (and optional name).
+- The entered email is used as the `userId` for the entire session, and is:
+  - Stored alongside each blink event in the local SQLite database.
+  - Sent in the URL path for all backend calls: `POST /blinks/:userId` and `GET /dashboard/:userId`.
+- This keeps the UX lightweight while still modeling per‑user data separation and enabling user‑specific dashboards.
+
+In a production system this dialog would be replaced or backed by a real identity provider (e.g. SSO/Firebase Auth) so the email is verified and associated with an account in the district’s IdP.[web:22][web:32]
+
+### Offline-First Sync Behaviour
+
+- Each blink event is written immediately to a local **SQLite** table with a `synced` flag defaulting to `0`.
+- The app then attempts to send the event to the backend API; on success it marks the corresponding row as `synced = 1`.
+- If the network call fails, the row remains unsynced and can be retried on the next successful connection, providing graceful handling of offline periods.[web:21][web:38]
 
 ### If given more time
 
@@ -78,4 +100,5 @@ This prototype was designed with GDPR principles in mind, even though it is not 
 - Implement real storage and aggregation (RDS/Firestore) plus data export/erasure endpoints.  
 - Conduct a DPIA focused on eye-tracking data and document it for district customers.  
 - Add automated privacy and security tests in CI to guard against regressions.
+
 
